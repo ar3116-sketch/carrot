@@ -709,6 +709,28 @@ def last_plan() -> Dict[str, Any]:
 # Both are asked for as strict JSON so the result can be validated rather than
 # parsed hopefully.
 
+# Reading a sentence into answers. Fourteen labelled boxes is a form, and
+# nobody fills in a form to try something out. "I'm at Dartmouth, living in
+# Russell Sage, gym 4x a week" answers four of them at once, and the ones it
+# cannot answer are the only ones worth asking about.
+UNDERSTAND_PROMPT = """The user described their situation. Pull out only what
+they actually said. Return ONLY JSON:
+
+{{"answers": {{"school": "", "home": "", "wake": "", "sleep": "", "meals": "",
+              "dining": "", "gym": "", "gym_place": "", "gym_time": "",
+              "work": "", "study": "", "transport": ""}}}}
+
+Rules:
+- Omit any field they did not mention. Do not guess, and do not fill a field
+  from a general assumption about people like them — a plan built on an
+  invented bedtime is a plan for someone else.
+- Times as "7:30 AM". gym as "4 times a week, 75 minutes" if both are given.
+- gym_time is one of morning, afternoon, evening, no preference.
+- transport is one of walk, shuttle, bike, drive.
+
+THEY SAID: {text}"""
+
+
 EXTRACT_PROMPT = """Read this class schedule or syllabus and return ONLY a JSON object:
 
 {"courses": [{"code": "", "title": "", "days": "", "start": "", "end": "",

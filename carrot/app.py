@@ -68,6 +68,8 @@ from carrot import (
     webhooks_api,
     consensus as consensus_mod,
     consensus_api,
+    ambient as ambient_mod,
+    ambient_api,
     dualauth,
     gitops as gitops_mod,
     help as help_mod,
@@ -115,6 +117,7 @@ app.include_router(planner_api.router)
 app.include_router(webhooks_api.router)
 app.include_router(webhooks_api.public_router)
 app.include_router(consensus_api.router)
+app.include_router(ambient_api.router)
 
 
 # ===== Pydantic request models =====
@@ -1669,7 +1672,21 @@ async def chat(req: ChatRequest):
     if req.stream:
         return _chat_stream_response(req, conv, history, skill, resolved, mode=mode)
 
-    response = router_mod.complete(resolved, history)
+    # The non-streaming path used to call the model once, directly, with no
+    # tools at all — so the quick-ask overlay, which is the only caller, could
+    # not search, could not read a page, and had none of the never-answer-with-
+    # nothing guarantees the streaming path has. It runs the same loop now and
+    # collects the result, so the two doors into chat behave the same.
+    parts, tools_used, route_info = [], [], resolved.as_dict()
+    final = ""
+    for event in _agentic_chat_events(history, resolved, skill, req.conversation_id, mode):
+        if "_final_text" in event:
+            final = event["_final_text"]
+        elif "chunk" in event:
+            parts.append(event["chunk"])
+        elif "tool" in event:
+            tools_used.append(event["tool"].get("name", ""))
+    response = final or "".join(parts)
     stored = conv_mod.add_message(req.conversation_id, "assistant", response)
     _post_turn(
         req.conversation_id, req.message, response,
@@ -1678,7 +1695,9 @@ async def chat(req: ChatRequest):
     return {
         "conversation_id": req.conversation_id,
         "response": response,
-        "route": resolved.as_dict(),
+        "route": route_info,
+        "tools": tools_used,
+        "search_mode": mode,
     }
 
 

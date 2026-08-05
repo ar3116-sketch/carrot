@@ -648,3 +648,137 @@ class TestOnboardingRevision:
         used = set(re.findall(r"var\((--[a-z0-9-]+)", block))
         defined = set(re.findall(r"^\s*(--[a-z0-9-]+):", css, re.M))
         assert used <= defined, f"undefined CSS tokens: {sorted(used - defined)}"
+
+
+class TestTellingCarrotInASentence:
+    """Fourteen labelled boxes is a form, and nobody fills in a form to try
+    something out. One sentence answers four of them at once."""
+
+    def reply(self, payload):
+        import json
+        from unittest.mock import patch
+
+        from carrot import router as router_mod
+
+        def fake(resolved, messages, tools=None):
+            yield {"type": "text", "text": json.dumps(payload)}
+
+        return patch.object(router_mod, "stream_events", fake), \
+            patch.object(router_mod, "route", lambda **k: None)
+
+    def test_a_sentence_fills_several_answers_at_once(self, client):
+        stream, route = self.reply({"answers": {
+            "school": "Dartmouth", "home": "Russell Sage",
+            "gym": "4 times a week, 75 minutes"}})
+        with stream, route:
+            body = client.post("/api/planner/understand", json={
+                "text": "I'm at Dartmouth in Russell Sage, gym 4x a week for 75 min"}).json()
+        assert body["understood"]["school"] == "Dartmouth"
+        assert len(body["understood"]) == 3
+
+    def test_it_comes_back_with_the_next_question_not_a_form(self, client):
+        stream, route = self.reply({"answers": {"school": "Dartmouth"}})
+        with stream, route:
+            body = client.post("/api/planner/understand",
+                               json={"text": "I'm at Dartmouth"}).json()
+        assert body["next_question"]["id"] == "home"
+        assert body["next_question"]["why"]
+
+    def test_fields_it_does_not_know_are_ignored(self, client):
+        # A model inventing an extra key must not become a stored answer.
+        stream, route = self.reply({"answers": {"school": "Dartmouth", "favourite_colour": "blue"}})
+        with stream, route:
+            body = client.post("/api/planner/understand", json={"text": "x"}).json()
+        assert "favourite_colour" not in body["answers"]
+
+    def test_empty_values_are_not_stored_as_answers(self, client):
+        # An empty string would count as answered and stop it asking.
+        stream, route = self.reply({"answers": {"school": "Dartmouth", "home": "   "}})
+        with stream, route:
+            body = client.post("/api/planner/understand", json={"text": "x"}).json()
+        assert body["next_question"]["id"] == "home"
+
+    def test_saying_nothing_is_a_400(self, client):
+        assert client.post("/api/planner/understand", json={"text": "  "}).status_code == 400
+
+    def test_the_prompt_forbids_guessing(self):
+        # A plan built on an invented bedtime is a plan for someone else.
+        assert "Do not guess" in planner.UNDERSTAND_PROMPT
+        assert "invented bedtime" in planner.UNDERSTAND_PROMPT
+
+
+class TestPlannerIsNotStudentware:
+    def read(self, *parts):
+        from pathlib import Path
+        return Path(__file__).resolve().parents[1].joinpath("carrot", "web", *parts).read_text()
+
+    def test_it_is_called_planner(self):
+        html = self.read("index.html")
+        assert "<h2>Planner</h2>" in html
+        assert "Semester planner" not in html
+
+    def test_the_copy_is_not_campus_only(self):
+        # A timetable, a shift rota, a training schedule — the engine does not
+        # care which, and calling it student-ware narrows it for no reason.
+        html = self.read("index.html")
+        assert "shift rota" in html or "a rota" in html
+
+    def test_the_form_is_behind_a_disclosure(self):
+        # Meeting a wall of fourteen required questions is what makes people
+        # close the tab.
+        assert '<details class="settings-card" id="planner-intake-card">' in self.read("index.html")
+
+    def test_you_can_just_say_what_you_want(self):
+        html = self.read("index.html")
+        assert 'id="planner-freeform"' in html
+        assert "function tellPlanner" in self.read("js", "planner.js")
+
+    def test_every_css_token_the_conversation_uses_is_defined(self):
+        import re
+
+        css = self.read("css", "style.css")
+        block = css.split("/* ===== Planner: the conversation =====")[1]
+        used = set(re.findall(r"var\((--[a-z0-9-]+)", css.split("/* ===== Planner: the conversation =====")[1]))
+        defined = set(re.findall(r"^\s*(--[a-z0-9-]+):", css, re.M))
+        assert used <= defined, f"undefined CSS tokens: {sorted(used - defined)}"
+
+
+class TestTheTruthAboutWhereItRuns:
+    def read(self, *parts):
+        from pathlib import Path
+        return Path(__file__).resolve().parents[1].joinpath("carrot", "web", *parts).read_text()
+
+    def test_the_empty_state_no_longer_claims_local_unconditionally(self):
+        # With a hosted model selected it was simply false, and a privacy claim
+        # that is false in the one place people read it is worse than none.
+        html = self.read("index.html")
+        assert "Everything runs on your machine" not in html
+        assert 'id="chat-empty-line"' in html
+
+    def test_it_says_cloud_when_the_route_is_cloud(self):
+        js = self.read("js", "app.js")
+        assert "over the internet" in js
+        assert "function renderEmptyStateLine" in js
+
+    def test_it_updates_when_the_model_changes(self):
+        js = self.read("js", "app.js")
+        assert js.count("renderEmptyStateLine()") >= 3
+
+
+class TestTheOverlayIsAFullTurn:
+    def test_the_non_streaming_path_runs_the_tool_loop(self):
+        from pathlib import Path
+
+        # It used to call the model once, directly, with no tools — so the
+        # quick-ask overlay could not search and had none of the
+        # never-answer-with-nothing guarantees.
+        source = (Path(__file__).resolve().parents[1] / "carrot" / "app.py").read_text()
+        chat = source.split("async def chat(req: ChatRequest):")[1][:2000]
+        assert "_agentic_chat_events" in chat
+        assert "router_mod.complete(resolved, history)" not in chat
+
+    def test_the_overlay_can_ask_for_a_search_mode(self):
+        from pathlib import Path
+
+        main = (Path(__file__).resolve().parents[1] / "gui" / "main.js").read_text()
+        assert "body.search_mode = opts.search_mode" in main

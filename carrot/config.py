@@ -96,6 +96,9 @@ DEFAULTS = {
     "consensus_panel": [],
     "consensus_synthesiser": {},
     "consensus_runs": [],
+    # Ambient capture policy. Off, and default-deny on everything that
+    # matters, until the user says otherwise.
+    "ambient_policy": {},
     # Dual authentication: per-provider "api_key" or "subscription", the OAuth
     # client each installation registers, and the tokens a sign-in produced.
     "auth_modes": {},

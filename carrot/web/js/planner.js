@@ -25,6 +25,69 @@ async function loadPlanner() {
         : `${plannerState.missing.length} question(s) left`;
 }
 
+// ---------- Telling Carrot in a sentence ----------
+//
+// Fourteen labelled boxes is a form, and nobody fills in a form to try
+// something out. One sentence answers four of them at once; the ones it could
+// not answer are the only ones worth asking about, and they get asked here
+// rather than sitting on the page as empty required fields.
+
+async function tellPlanner() {
+    const input = document.getElementById('planner-freeform');
+    const host = document.getElementById('planner-conversation');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    say('you', text);
+    say('carrot', 'reading that…', 'pending');
+
+    let body;
+    try {
+        body = await api('/api/planner/understand',
+            { method: 'POST', body: JSON.stringify({ text }) });
+    } catch (e) {
+        replacePending(e.detail || e.message);
+        return;
+    }
+
+    const got = Object.entries(body.understood || {});
+    const heard = got.length
+        ? 'Got it — ' + got.map(([k, v]) => `${labelFor(k)}: ${v}`).join(', ') + '.'
+        : 'I could not pull anything definite out of that.';
+    const next = body.next_question
+        ? ` ${body.next_question.question} (${body.next_question.why})`
+        : ' That is everything I need — add your classes and I can build the week.';
+    replacePending(heard + next);
+    plannerState = { ...(plannerState || {}), answers: body.answers, missing: body.missing };
+    loadPlanner();
+    if (body.next_question) input.focus();
+}
+
+function labelFor(id) {
+    const question = (plannerState?.questions || []).find(q => q.id === id);
+    return question ? question.question.replace(/\?.*$/, '').toLowerCase() : id;
+}
+
+function say(who, text, cls) {
+    const host = document.getElementById('planner-conversation');
+    if (!host) return;
+    const row = document.createElement('div');
+    row.className = 'planner-said ' + who + (cls ? ' ' + cls : '');
+    row.textContent = text;
+    host.appendChild(row);
+    host.scrollTop = host.scrollHeight;
+}
+
+function replacePending(text) {
+    const pending = document.querySelector('#planner-conversation .pending');
+    if (pending) {
+        pending.textContent = text;
+        pending.classList.remove('pending');
+    } else {
+        say('carrot', text);
+    }
+}
+
 // ---------- Intake ----------
 
 function renderIntake() {

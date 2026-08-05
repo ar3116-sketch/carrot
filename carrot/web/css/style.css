@@ -4560,3 +4560,44 @@ td, th, .si-sub, .small, .editor-status {
   line-height: 1.6;
 }
 .temp-banner strong { color: var(--text); }
+
+/* ===== The council chip =====
+   Always visible. A chip that appears only once configured is a feature
+   nobody discovers, because discovering it required already knowing. */
+.composer-chip.needs-setup { opacity: 0.55; border-style: dashed; }
+.composer-chip.needs-setup:hover { opacity: 1; }
+#chat-empty-line.cloud { color: var(--yellow); }
+
+/* ===== Planner: the conversation =====
+   The form is still there, behind a disclosure — but it is not what you meet
+   first, because meeting a form is what makes people close the tab. */
+.planner-conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.planner-said {
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 8px 12px;
+  border-radius: 12px;
+  max-width: 88%;
+}
+.planner-said.you {
+  align-self: flex-end;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--text);
+}
+.planner-said.carrot {
+  align-self: flex-start;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.planner-said.pending { opacity: 0.6; font-style: italic; }
+#planner-intake-card summary { cursor: pointer; list-style: none; }
+#planner-intake-card summary::-webkit-details-marker { display: none; }

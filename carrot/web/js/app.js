@@ -301,6 +301,7 @@ async function loadModels() {
         }
         document.getElementById('model-label').textContent = currentModel;
         renderModelPop(data);
+        renderEmptyStateLine();
     } catch (_) {
         document.getElementById('model-label').textContent = 'no engine';
     }
@@ -441,6 +442,7 @@ async function selectRemoteModel(provider, model) {
         currentModel = model;
         currentProvider = provider;
         document.getElementById('model-label').textContent = model;
+        renderEmptyStateLine();
         document.getElementById('model-pop').classList.add('hidden');
         loadModels();
         refreshStatus();
@@ -458,6 +460,7 @@ async function selectModel(name) {
         currentModel = name;
         currentProvider = 'ollama';
         document.getElementById('model-label').textContent = name;
+        renderEmptyStateLine();
         document.getElementById('model-pop').classList.add('hidden');
         loadModels();
         refreshStatus();
@@ -869,8 +872,9 @@ function newChat() {
     messagesEl.innerHTML = `
         <div class="chat-empty" id="chat-empty">
             <span class="logo-mask big"></span>
-            <p>Everything runs on your machine. Ask anything below.</p>
+            <p id="chat-empty-line">Ask anything below.</p>
         </div>`;
+    renderEmptyStateLine();
     switchTab('workspace');
     focusCmd();
 }
@@ -1801,6 +1805,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     switchTab('dashboard');
     loadTerminalHistory();
     setInterval(refreshStatus, 15000);
+    // The council chip lives in the composer, so its state has to be known
+    // from the first paint rather than only after a visit to Settings.
+    if (typeof loadConsensusPanel === 'function') loadConsensusPanel();
 
     // Ctrl+K focuses the command bar
     document.addEventListener('keydown', e => {
@@ -2054,3 +2061,20 @@ function renderTemporaryState() {
 
 // A new chat inherits the mode you are in, so the banner has to follow it.
 document.addEventListener('DOMContentLoaded', renderTemporaryState);
+
+// ===== "Everything runs on your machine" — only when it does =====
+//
+// The empty state used to say that unconditionally. With a hosted model
+// selected it was simply false, and a privacy claim that is false in the one
+// place people read it is worse than no claim at all.
+
+function renderEmptyStateLine() {
+    const line = document.getElementById('chat-empty-line');
+    if (!line) return;
+    const local = currentProvider === 'ollama' || currentProvider === null;
+    line.textContent = local
+        ? 'Everything runs on your machine. Ask anything below.'
+        : `Answers come from ${currentModel || 'a hosted model'} over the internet. `
+          + 'Ask anything below.';
+    line.classList.toggle('cloud', !local);
+}

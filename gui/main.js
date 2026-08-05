@@ -372,6 +372,9 @@ ipcMain.handle('send-command', async (event, command) => {
     }
     if (opts.conversation_id) body.conversation_id = opts.conversation_id;
     if (opts.workspace_id) body.workspace_id = opts.workspace_id;
+    // The overlay is a full chat turn, not a lesser one: without this it fell
+    // back to the saved default and had no way to ask for more.
+    if (opts.search_mode) body.search_mode = opts.search_mode;
     const response = await fetch(`${BACKEND_URL}/api/chat`, {
       method: 'POST',
       headers: apiHeaders(),

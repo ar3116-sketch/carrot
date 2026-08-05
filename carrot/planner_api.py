@@ -31,6 +31,10 @@ class SyllabusRequest(BaseModel):
     name: Optional[str] = "syllabus"
 
 
+class UnderstandRequest(BaseModel):
+    text: str
+
+
 class CoursesRequest(BaseModel):
     courses: List[Dict[str, Any]]
 
@@ -74,6 +78,56 @@ async def save_answers(req: AnswersRequest):
         "missing": missing,
         "next_question": missing[0] if missing else None,
         "ready": planner.intake_complete(stored),
+    }
+
+
+@router.post("/understand")
+async def understand(req: UnderstandRequest):
+    """Read a sentence into answers, and report what is still missing.
+
+    This is the difference between a form and a conversation. The user says
+    what they know in their own words; Carrot records what it can and comes
+    back with the one thing it still needs, rather than fourteen boxes.
+    """
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="say something first")
+
+    from carrot import router as router_mod
+
+    try:
+        resolved = router_mod.route(task="extract")
+        reply = "".join(
+            event.get("text", "")
+            for event in router_mod.stream_events(
+                resolved,
+                [{"role": "user", "content": planner.UNDERSTAND_PROMPT.format(text=text[:4000])}],
+                tools=None)
+            if event.get("type") in ("text", "content")
+        )
+        payload = planner.parse_json_block(reply)
+    except planner.PlannerError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"could not read that: {exc}")
+
+    # Only fields the intake actually knows about, and only non-empty ones —
+    # a model that answers a question the user did not answer is the failure
+    # this whole flow exists to avoid.
+    known = {q["id"] for q in planner.INTAKE}
+    understood = {
+        key: str(value).strip()
+        for key, value in (payload.get("answers") or {}).items()
+        if key in known and str(value or "").strip()
+    }
+    stored = planner.save_answers(understood) if understood else planner.profile()
+    missing = planner.missing_intake(stored)
+    return {
+        "understood": understood,
+        "answers": stored.get("answers", {}),
+        "missing": missing,
+        "next_question": missing[0] if missing else None,
+        "ready": not missing,
     }
 
 

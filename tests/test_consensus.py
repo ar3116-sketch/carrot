@@ -343,10 +343,27 @@ class TestTheInterface:
     def test_there_is_a_debate_button_in_the_composer(self):
         assert 'id="debate-btn"' in self.read("index.html")
 
-    def test_the_button_hides_until_a_panel_exists(self):
-        # Offering a debate that cannot run is worse than not offering one.
+    def test_the_chip_is_always_visible(self):
+        # Hiding it until a panel existed meant nobody discovered that a panel
+        # was a thing you could make — discovering it required already knowing.
         js = self.read("js", "studio.js")
-        assert "debate-btn')?.classList.toggle('hidden', !consensusState.ready)" in js
+        assert "chip.classList.remove('hidden');" in js
+        assert 'id="debate-btn" class="composer-chip needs-setup"' in self.read("index.html")
+
+    def test_an_unconfigured_chip_takes_you_to_the_setup(self):
+        # A chip that does nothing teaches people the feature is broken.
+        js = self.read("js", "studio.js")
+        start = js.split("async function debateCurrentQuestion")[1][:600]
+        assert "switchTab('settings')" in start
+
+    def test_the_chip_state_is_known_from_the_first_paint(self):
+        # It lives in the composer, so loading it only on the Settings tab left
+        # it wrong for everyone who never opened Settings.
+        assert "loadConsensusPanel();" in self.read("js", "app.js")
+
+    def test_the_panel_loader_survives_a_missing_settings_host(self):
+        js = self.read("js", "studio.js")
+        assert "renderCouncilChip();\n    if (!host) return;" in js
 
     def test_the_settings_copy_says_to_pick_models_that_differ(self):
         # Two models from the same family agree for the same reasons, which is
@@ -391,7 +408,7 @@ class TestTheInterface:
 
     def test_disagreement_renders_above_the_answer(self):
         js = self.read("js", "studio.js")
-        render = js.split("function renderDebate")[1]
+        render = js.split("function renderDebate(run, content)")[1]
         assert render.index("debate-split") < render.index("mdToHtml")
 
     def test_the_degraded_case_is_shown_not_hidden(self):

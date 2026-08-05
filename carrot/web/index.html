@@ -37,6 +37,7 @@
   <symbol id="i-terminal" viewBox="0 0 24 24"><path d="M8.6 7.6L3.6 12l5 4.4M15.4 7.6l5 4.4-5 4.4M13.6 4.4l-3.2 15.2"/></symbol>
   <symbol id="i-doc" viewBox="0 0 24 24"><path d="M13.4 2.8H7a2.6 2.6 0 0 0-2.6 2.6v13.2A2.6 2.6 0 0 0 7 21.2h10a2.6 2.6 0 0 0 2.6-2.6V9z"/><path d="M13.4 2.8V9h6.2"/></symbol>
   <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M2.8 12.4h3.9l2.3-6.2 4.2 12.2 2.4-6h5.6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.4 12S6.2 5.4 12 5.4 21.6 12 21.6 12 17.8 18.6 12 18.6 2.4 12 2.4 12z"/><circle cx="12" cy="12" r="3.1"/></symbol>
   <symbol id="i-cap" viewBox="0 0 24 24"><path d="M21 9.2L12 4.8 3 9.2l9 4.4z"/><path d="M6.6 11.4v4.4c0 1.6 2.4 2.9 5.4 2.9s5.4-1.3 5.4-2.9v-4.4"/></symbol>
   <symbol id="i-news" viewBox="0 0 24 24"><rect x="3.2" y="4.6" width="17.6" height="14.8" rx="3"/><path d="M7 9.2h10M7 12.6h10M7 16h6"/></symbol>
   <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><path d="M12 2.6l1.5 2.6a7.6 7.6 0 0 1 2 .8l2.9-.6 1.6 2.8-1.9 2.3a7.6 7.6 0 0 1 0 2.2l1.9 2.3-1.6 2.8-2.9-.6a7.6 7.6 0 0 1-2 .8L12 21.4l-1.5-2.6a7.6 7.6 0 0 1-2-.8l-2.9.6-1.6-2.8 1.9-2.3a7.6 7.6 0 0 1 0-2.2L4 9l1.6-2.8 2.9.6a7.6 7.6 0 0 1 2-.8z"/></symbol>
@@ -250,8 +251,8 @@
         </div>
         <div class="tour-item">
           <span class="tour-what">Planner</span>
-          <span class="tour-why">Hand it a photo of your class schedule and it builds a
-            week around it, travel time and meals included.</span>
+          <span class="tour-why">Hand it a photo of whatever fixes your week — a timetable,
+            a rota — and it builds a week around it, travel time and meals included.</span>
         </div>
         <div class="tour-item">
           <span class="tour-what">Research</span>
@@ -449,7 +450,7 @@
       <div id="chat-messages">
         <div class="chat-empty" id="chat-empty">
           <span class="logo-mask big"></span>
-          <p>Everything runs on your machine. Ask anything below.</p>
+          <p id="chat-empty-line">Ask anything below.</p>
         </div>
       </div>
       <div id="terminal-panel">
@@ -668,32 +669,23 @@
   <section id="view-planner" class="view">
     <div class="page">
       <div class="page-head">
-        <h2>Semester planner</h2>
+        <h2>Planner</h2>
         <span class="muted small" id="planner-status"></span>
       </div>
 
-      <!-- Step 1. Nobody volunteers where they live or when they sleep, and a
-           plan built without those is a beautiful schedule for a person who
-           does not exist. So it asks, one question at a time, and says why. -->
-      <div class="settings-card" id="planner-intake-card">
-        <div class="settings-head">
-          <svg class="ico"><use href="#i-help"/></svg>
-          <h3>1 · About you</h3>
-        </div>
-        <div id="planner-intake"><div class="empty">Loading…</div></div>
-      </div>
-
-      <!-- Step 2. -->
-      <div class="settings-card">
+      <!-- Start here. A wall of fourteen questions is a form, and nobody fills
+           in a form to try something. Drop in a schedule and say what you want
+           in a sentence; the questions that remain are the ones that could not
+           be worked out, and they are asked in conversation. -->
+      <div class="settings-card" id="planner-start">
         <div class="settings-head">
           <svg class="ico"><use href="#i-image"/></svg>
-          <h3>2 · Your classes</h3>
+          <h3>Start here</h3>
         </div>
         <p class="muted small">
-          Photograph or screenshot your schedule and drop it here — a vision model reads
-          the grid. You can paste the text instead if you have it. Nothing is saved until
-          you have checked it: a misread room number would send you to the wrong building
-          all term.
+          Drop in a photo of whatever fixes your week — a class timetable, a shift rota,
+          a training schedule — and say what else you want to fit around it. Carrot works
+          out what it still needs to know and asks only that.
         </p>
         <div id="planner-drop" class="planner-drop">
           <input type="file" id="planner-file" accept="image/*" hidden
@@ -703,6 +695,32 @@
           </button>
           <span class="muted small">or drop one here, or paste a screenshot</span>
         </div>
+        <div class="settings-row">
+          <input type="text" id="planner-freeform" spellcheck="false"
+                 placeholder="I&apos;m at Dartmouth, living in Russell Sage, want the gym 4x a week and 3 meals a day"
+                 onkeydown="if(event.key==='Enter')tellPlanner()">
+          <button class="btn btn-primary" onclick="tellPlanner()">Tell Carrot</button>
+        </div>
+        <div id="planner-conversation" class="planner-conversation"></div>
+      </div>
+
+      <details class="settings-card" id="planner-intake-card">
+        <summary class="settings-head">
+          <svg class="ico"><use href="#i-help"/></svg>
+          <h3>Everything Carrot knows — edit anything</h3>
+        </summary>
+        <div id="planner-intake"><div class="empty">Loading…</div></div>
+      </details>
+
+      <div class="settings-card">
+        <div class="settings-head">
+          <svg class="ico"><use href="#i-cap"/></svg>
+          <h3>Your classes and commitments</h3>
+        </div>
+        <p class="muted small">
+          Nothing is saved until you have checked it: a misread room number would send
+          you to the wrong building all term.
+        </p>
         <details class="planner-paste">
           <summary>Paste the schedule as text instead</summary>
           <textarea id="planner-text" rows="5" spellcheck="false"
@@ -717,15 +735,15 @@
       <div class="settings-card">
         <div class="settings-head">
           <svg class="ico"><use href="#i-target"/></svg>
-          <h3>3 · Your campus</h3>
+          <h3>Getting between places</h3>
         </div>
         <p class="muted small">
-          Carrot needs to know roughly where each building is, or it cannot tell that
-          lunch is eleven minutes after a class on the other side of campus. It will look
-          them up; anything it is unsure of is listed so you can correct it.
+          Carrot needs to know roughly where each place is, or it cannot tell that lunch
+          is eleven minutes after something on the other side of town. It will look them
+          up; anything it is unsure of is listed so you can correct it.
         </p>
         <div class="settings-row">
-          <button class="btn btn-primary" onclick="lookupCampus()">Look up my buildings</button>
+          <button class="btn btn-primary" onclick="lookupCampus()">Look up my places</button>
           <span class="muted small" id="planner-campus-status"></span>
         </div>
         <div id="planner-buildings"></div>
@@ -735,7 +753,7 @@
       <div class="settings-card">
         <div class="settings-head">
           <svg class="ico"><use href="#i-cap"/></svg>
-          <h3>4 · Your week</h3>
+          <h3>Your week</h3>
         </div>
         <div class="settings-row">
           <button class="btn btn-primary" id="planner-build" onclick="buildPlan()">Build my week</button>
@@ -1387,6 +1405,43 @@
         </div>
       </div>
 
+      <!-- Ambient capture rules. These exist before ambient capture does, on
+           purpose: written the other way round, the exclusions become a patch
+           on a system that already recorded your banking session. -->
+      <div class="settings-card">
+        <div class="settings-head">
+          <svg class="ico"><use href="#i-eye"/></svg>
+          <h3>What Carrot is allowed to see</h3>
+        </div>
+        <p class="muted small">
+          Ambient capture — reading your screen so you can ask "what was that thing I
+          had open on Tuesday" — is off, and every one of these rules is on before you
+          arrive. You should never have to think to exclude a private browsing window:
+          opening one is you saying, in the only words the browser gave you, that this
+          is not to be kept. Nothing here is capture. This is the gate capture has to
+          get through, and you can try it below on a window that does not exist.
+        </p>
+        <div id="ambient-panel"><div class="empty">Loading…</div></div>
+        <div class="settings-row" style="margin-top:12px">
+          <select id="ambient-kind" aria-label="What to exclude">
+            <option value="app">App named…</option>
+            <option value="title">Window title containing…</option>
+            <option value="url">URL containing…</option>
+          </select>
+          <input type="text" id="ambient-value" placeholder="Signal, mail.proton.me, …"
+                 spellcheck="false" onkeydown="if(event.key==='Enter')addAmbientExclusion()">
+          <button class="btn" onclick="addAmbientExclusion()">Never capture this</button>
+        </div>
+        <div id="ambient-exclusions"></div>
+        <div class="settings-row" style="margin-top:12px">
+          <input type="text" id="ambient-try-app" placeholder="App, e.g. Chrome" spellcheck="false">
+          <input type="text" id="ambient-try-title" placeholder="Window title" spellcheck="false"
+                 onkeydown="if(event.key==='Enter')tryAmbientWindow()">
+          <button class="btn btn-ghost" onclick="tryAmbientWindow()">Would this be captured?</button>
+        </div>
+        <div id="ambient-try-result" class="muted small"></div>
+      </div>
+
       <div class="settings-card">
         <div class="settings-head">
           <svg class="ico"><use href="#i-pulse"/></svg>
@@ -1573,11 +1628,11 @@
     <svg class="ico"><use href="#i-ghost"/></svg>
     <span>Temporary</span>
   </button>
-  <button id="debate-btn" class="composer-chip hidden"
+  <button id="debate-btn" class="composer-chip needs-setup"
           onclick="debateCurrentQuestion()"
-          title="Ask your panel of models and make them argue before answering">
+          title="Set up a model council">
     <svg class="ico"><use href="#i-chip"/></svg>
-    <span>Debate</span>
+    <span>Council</span>
   </button>
   <div id="search-picker">
     <button id="search-btn" onclick="toggleSearchPop()" title="How much Carrot may search the web">

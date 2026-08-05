@@ -437,23 +437,45 @@ let consensusState = null;
 // at debate time rather than at pick time.
 let availableModels = [];
 
+// The composer's Debate chip is unhidden by this, and the settings host does
+// not exist outside the Settings tab — so bailing on a missing host meant the
+// chip stayed hidden forever for anyone who never opened Settings. Which is
+// everyone: the feature was invisible in the only place it is used.
 async function loadConsensusPanel() {
     const host = document.getElementById('consensus-panel');
-    if (!host) return;
     try {
         consensusState = await api('/api/consensus');
     } catch (e) {
-        host.innerHTML = `<div class="empty error">${escHtml(e.message)}</div>`;
+        if (host) host.innerHTML = `<div class="empty error">${escHtml(e.message)}</div>`;
         return;
     }
+    // The chip first, and unconditionally: it is the part that lives outside
+    // this panel and it must reflect the state wherever you are.
+    renderCouncilChip();
+    if (!host) return;
+
     await loadAvailableModels();
     renderPanelMembers(host);
     renderPanelAdder();
     renderJudgePicker();
     renderPanelSuggestion();
+}
 
-    // The composer button only appears once a debate is actually possible.
-    document.getElementById('debate-btn')?.classList.toggle('hidden', !consensusState.ready);
+// Always shown, never hidden. A feature you cannot see is a feature you do not
+// have: hiding the chip until a panel existed meant nobody ever discovered
+// that a panel was a thing you could make. Without one it explains itself and
+// takes you to the setup instead of doing nothing.
+function renderCouncilChip() {
+    const chip = document.getElementById('debate-btn');
+    if (!chip) return;
+    chip.classList.remove('hidden');
+    const ready = !!consensusState?.ready;
+    chip.classList.toggle('needs-setup', !ready);
+    chip.title = ready
+        ? `Ask your council — ${consensusState.panel.map(m => m.model).join(', ')} — `
+          + 'and make them argue before answering'
+        : 'Set up a model council: two or more models answer, critique each '
+          + 'other, then one writes the final answer';
 }
 
 async function loadAvailableModels() {
@@ -610,6 +632,14 @@ async function saveSynthesiser(value) {
 // ---------- Running one from the composer ----------
 
 async function debateCurrentQuestion() {
+    if (!consensusState?.ready) {
+        // Take them to the setup rather than failing quietly. A chip that does
+        // nothing teaches people the feature is broken.
+        if (typeof switchTab === 'function') switchTab('settings');
+        setTimeout(() => document.getElementById('consensus-panel')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+        return;
+    }
     const input = document.getElementById('cmd-input') || document.getElementById('chat-input');
     const question = (input?.value || '').trim();
     if (!question) return;
@@ -708,4 +738,236 @@ function renderDebate(run, content) {
     footer.textContent = `${models} · ${run.seconds}s · `
         + (run.agreement >= 0.5 ? 'the answers were close' : 'the answers diverged');
     content.appendChild(footer);
+}
+
+// ---------- What Carrot is allowed to see ----------
+//
+// The rules for ambient capture, shipped before ambient capture. The panel is
+// deliberately a list of switches that are already on rather than a list of
+// things to opt into: an exclusion you have to know to add is an exclusion
+// that only protects the people who already knew.
+
+let ambientState = null;
+
+// The four built-in protections, in the order they matter. `hint` is the part
+// worth reading — a switch labelled "skip private windows" is a setting, and a
+// sentence explaining why it is already on is a promise.
+const AMBIENT_GUARDS = [
+    ['skip_private_windows', 'Never capture private browsing',
+     'Incognito, Private Browsing, InPrivate. You already said what you wanted by opening one.'],
+    ['skip_password_fields', 'Never capture while typing a password',
+     'When the OS says a secure input field has focus, capture stops until it does not.'],
+    ['skip_known_secret_apps', 'Never capture password managers',
+     '1Password, Bitwarden, KeePass, Keychain and the rest — no configuration needed.'],
+    ['skip_sensitive_titles', 'Skip banking, medical and tax windows',
+     'Matched on the window title, so it works for a site Carrot has never heard of.'],
+];
+
+const AMBIENT_RESOURCE_GUARDS = [
+    ['yield_to_models', 'Stand aside while a model is working',
+     'You are waiting on that answer. You are not waiting on the screen index.'],
+    ['skip_when_idle', 'Stop when you are away from the machine',
+     'Capturing a screensaver a thousand times is pure cost.'],
+    ['pause_on_battery', 'Stop entirely on battery',
+     'Off by default — it already slows down and stops at a low charge.'],
+];
+
+async function loadAmbientPanel() {
+    const host = document.getElementById('ambient-panel');
+    if (!host) return;
+    try {
+        ambientState = await api('/api/ambient');
+    } catch (e) {
+        host.innerHTML = `<div class="empty error">${escHtml(e.message)}</div>`;
+        return;
+    }
+    const p = ambientState.policy;
+    host.innerHTML = '';
+
+    const master = document.createElement('div');
+    master.className = 'settings-row';
+    master.innerHTML = `
+      <label class="switch">
+        <input type="checkbox" id="ambient-enabled" ${p.enabled ? 'checked' : ''}>
+        <span>Let Carrot read the screen in the background</span>
+      </label>`;
+    master.querySelector('input').onchange = (e) =>
+        saveAmbientPolicy({ enabled: e.target.checked });
+    host.appendChild(master);
+
+    // What the gate says right now — including "it is off", which is the most
+    // common answer and the most confusing one to leave unsaid.
+    const state = document.createElement('div');
+    state.className = 'muted small';
+    const decision = ambientState.decision || {};
+    state.textContent = decision.allowed
+        ? `Right now: capturing, next look in ${Math.round(decision.retry_after)}s.`
+        : `Right now: not capturing — ${decision.reason}.`;
+    host.appendChild(state);
+
+    host.appendChild(ambientGuardGroup('Privacy', AMBIENT_GUARDS, p));
+    host.appendChild(ambientGuardGroup('Your machine', AMBIENT_RESOURCE_GUARDS, p));
+
+    const cadence = document.createElement('div');
+    cadence.className = 'settings-row';
+    cadence.innerHTML = `
+      <label class="muted small" for="ambient-interval">Look every</label>
+      <input type="number" id="ambient-interval" min="2" max="120" step="1"
+             value="${p.interval_seconds}" style="width:5em">
+      <span class="muted small">seconds — and every</span>
+      <input type="number" id="ambient-battery-interval" min="2" max="120" step="1"
+             value="${p.battery_interval_seconds}" style="width:5em">
+      <span class="muted small">seconds on battery, stopping below</span>
+      <input type="number" id="ambient-battery-floor" min="0" max="100" step="5"
+             value="${p.battery_floor_percent}" style="width:5em">
+      <span class="muted small">% charge.</span>`;
+    for (const [id, key] of [['ambient-interval', 'interval_seconds'],
+                             ['ambient-battery-interval', 'battery_interval_seconds'],
+                             ['ambient-battery-floor', 'battery_floor_percent']]) {
+        cadence.querySelector('#' + id).onchange = (e) =>
+            saveAmbientPolicy({ [key]: Number(e.target.value) });
+    }
+    host.appendChild(cadence);
+
+    const pause = document.createElement('div');
+    pause.className = 'settings-row';
+    const paused = p.paused_until > Date.now() / 1000;
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-ghost';
+    btn.textContent = paused ? 'Resume capture' : 'Pause for an hour';
+    btn.onclick = () => pauseAmbient(paused);
+    pause.appendChild(btn);
+    host.appendChild(pause);
+
+    renderAmbientExclusions();
+}
+
+function ambientGuardGroup(heading, guards, policy) {
+    const group = document.createElement('div');
+    group.style.marginTop = '10px';
+    const title = document.createElement('div');
+    title.className = 'muted small';
+    title.textContent = heading;
+    group.appendChild(title);
+    for (const [key, label, hint] of guards) {
+        const row = document.createElement('div');
+        row.className = 'settings-row';
+        row.innerHTML = `
+          <label class="switch">
+            <input type="checkbox" ${policy[key] ? 'checked' : ''}>
+            <span>${escHtml(label)}<br><span class="muted small">${escHtml(hint)}</span></span>
+          </label>`;
+        row.querySelector('input').onchange = (e) =>
+            saveAmbientPolicy({ [key]: e.target.checked });
+        group.appendChild(row);
+    }
+    return group;
+}
+
+function renderAmbientExclusions() {
+    const host = document.getElementById('ambient-exclusions');
+    if (!host || !ambientState) return;
+    const p = ambientState.policy;
+    host.innerHTML = '';
+    const entries = [
+        ...p.excluded_apps.map(v => ['app', v]),
+        ...p.excluded_titles.map(v => ['title', v]),
+        ...p.excluded_urls.map(v => ['url', v]),
+    ];
+    if (!entries.length) {
+        host.innerHTML = '<div class="muted small">'
+            + 'Nothing of your own yet — the built-in rules above already cover private '
+            + 'windows, password managers and password fields.</div>';
+        return;
+    }
+    for (const [kind, value] of entries) {
+        const row = document.createElement('div');
+        row.className = 'settings-row';
+        row.innerHTML = `<span class="tag">${escHtml(kind)}</span>
+                         <span class="provider-name">${escHtml(value)}</span>`;
+        const remove = document.createElement('button');
+        remove.className = 'btn btn-ghost';
+        remove.textContent = 'Remove';
+        remove.onclick = () => removeAmbientExclusion(kind, value);
+        row.appendChild(remove);
+        host.appendChild(row);
+    }
+}
+
+async function saveAmbientPolicy(changes) {
+    try {
+        await api('/api/ambient/policy',
+            { method: 'PUT', body: JSON.stringify({ policy: changes }) });
+    } catch (e) {
+        alert('Could not save that: ' + (e.detail || e.message));
+    }
+    loadAmbientPanel();
+}
+
+async function addAmbientExclusion() {
+    const kind = document.getElementById('ambient-kind').value;
+    const input = document.getElementById('ambient-value');
+    const value = input.value.trim();
+    if (!value) return;
+    try {
+        await api('/api/ambient/exclusions',
+            { method: 'POST', body: JSON.stringify({ kind, value }) });
+    } catch (e) {
+        alert(e.detail || e.message);
+        return;
+    }
+    input.value = '';
+    loadAmbientPanel();
+}
+
+async function removeAmbientExclusion(kind, value) {
+    try {
+        await api('/api/ambient/exclusions/remove',
+            { method: 'POST', body: JSON.stringify({ kind, value }) });
+    } catch (e) {
+        alert(e.detail || e.message);
+        return;
+    }
+    loadAmbientPanel();
+}
+
+async function pauseAmbient(resuming) {
+    try {
+        await api(resuming ? '/api/ambient/resume' : '/api/ambient/pause',
+            { method: 'POST', body: JSON.stringify({ minutes: 60 }) });
+    } catch (e) {
+        alert(e.detail || e.message);
+    }
+    loadAmbientPanel();
+}
+
+// The honesty test. A promise that private windows are skipped is worth less
+// than watching one be refused, so you can type a window that does not exist
+// and see exactly which rule catches it.
+async function tryAmbientWindow() {
+    const out = document.getElementById('ambient-try-result');
+    if (!out) return;
+    const app = document.getElementById('ambient-try-app').value.trim();
+    const title = document.getElementById('ambient-try-title').value.trim();
+    if (!app && !title) {
+        out.textContent = 'Type an app or a window title to try.';
+        return;
+    }
+    let result;
+    try {
+        result = await api('/api/ambient/check',
+            { method: 'POST', body: JSON.stringify({ app, title }) });
+    } catch (e) {
+        out.textContent = e.detail || e.message;
+        return;
+    }
+    // The privacy gate is the interesting one: "it is off" is true but useless
+    // when what you are asking is whether this window would ever be read.
+    const privacy = result.privacy || {};
+    const overall = result.decision || {};
+    out.textContent = privacy.allowed
+        ? (overall.allowed
+            ? 'That window would be captured.'
+            : `Nothing about that window is private, but capture is not running: ${overall.reason}.`)
+        : `That window would never be captured — ${privacy.reason}.`;
 }
