@@ -91,6 +91,11 @@ DEFAULTS = {
     "webhooks_enabled": False,
     "webhooks": [],
     "webhook_targets": [],
+    # Multi-model debate. Empty until the user picks a panel: two models that
+    # fail differently is the point, and Carrot cannot guess which they have.
+    "consensus_panel": [],
+    "consensus_synthesiser": {},
+    "consensus_runs": [],
     # Dual authentication: per-provider "api_key" or "subscription", the OAuth
     # client each installation registers, and the tokens a sign-in produced.
     "auth_modes": {},

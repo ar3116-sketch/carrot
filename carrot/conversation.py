@@ -24,12 +24,16 @@ def create_conversation(title: str = "", metadata: dict = None):
     # A new chat belongs to whatever you are working on. Filing it here rather
     # than at the API layer means every path that opens a conversation — chat,
     # doc send, an agent run — gets it without remembering to.
-    try:
-        from . import workspaces as workspaces_mod
+    # A temporary chat is filed nowhere: it is about to be deleted, and leaving
+    # a dangling workspace entry behind would be a trace of a chat that was
+    # supposed to leave none.
+    if not (metadata or {}).get("temporary"):
+        try:
+            from . import workspaces as workspaces_mod
 
-        workspaces_mod.file_item(workspaces_mod.KIND_CONVERSATION, conv_id)
-    except Exception:
-        pass
+            workspaces_mod.file_item(workspaces_mod.KIND_CONVERSATION, conv_id)
+        except Exception:
+            pass
 
     return {"id": conv_id, "title": title, "created_at": ts, "metadata": metadata or {}}
 
@@ -248,3 +252,58 @@ def delete_folder(folder_id: str) -> bool:
     conn.commit()
     conn.close()
     return cur.rowcount > 0
+
+# ===== Temporary conversations =====
+#
+# A chat you want answered but not remembered: no memory extraction, no rolling
+# summary, no workspace filing, and gone when you close it. Every assistant
+# that quietly learns from everything you type needs an off switch that is
+# per-conversation rather than global, because the reason to want one is
+# usually a single question rather than a change of policy.
+
+TEMPORARY_KEY = "temporary"
+
+
+def is_temporary(conv_id: str) -> bool:
+    """Whether this conversation is exempt from being remembered."""
+    if not conv_id:
+        return False
+    conn = get_db()
+    row = conn.execute(
+        "SELECT metadata FROM conversations WHERE id = ?", (conv_id,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return False
+    try:
+        return bool(json.loads(row["metadata"] or "{}").get(TEMPORARY_KEY))
+    except (json.JSONDecodeError, TypeError):
+        return False
+
+
+def temporary_ids() -> list:
+    conn = get_db()
+    rows = conn.execute("SELECT id, metadata FROM conversations").fetchall()
+    conn.close()
+    found = []
+    for row in rows:
+        try:
+            if json.loads(row["metadata"] or "{}").get(TEMPORARY_KEY):
+                found.append(row["id"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+    return found
+
+
+def purge_temporary() -> int:
+    """Delete every temporary conversation. Run at startup and on demand.
+
+    Startup matters: a crash or a force-quit must not be the way a temporary
+    chat survives. "Temporary" that depends on a clean shutdown is not
+    temporary, it is usually-temporary.
+    """
+    deleted = 0
+    for conv_id in temporary_ids():
+        if delete_conversation(conv_id):
+            deleted += 1
+    return deleted

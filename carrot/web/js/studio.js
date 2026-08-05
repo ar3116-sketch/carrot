@@ -422,3 +422,290 @@ async function addHookTarget() {
         alert(e.detail || e.message);
     }
 }
+
+// ---------- Consensus & debate ----------
+//
+// The valuable output of a debate is not the answer, it is the disagreement.
+// So the panel renders the split first and the prose second: a run where two
+// models contradicted each other is telling you to go look, and burying that
+// under a confident paragraph would waste the whole exercise.
+
+let consensusState = null;
+// The models this machine can actually reach, from the same endpoint the
+// composer's picker uses. Typing a model name by hand was the wrong answer to
+// a question the app already knows: a typo produced a panel member that failed
+// at debate time rather than at pick time.
+let availableModels = [];
+
+async function loadConsensusPanel() {
+    const host = document.getElementById('consensus-panel');
+    if (!host) return;
+    try {
+        consensusState = await api('/api/consensus');
+    } catch (e) {
+        host.innerHTML = `<div class="empty error">${escHtml(e.message)}</div>`;
+        return;
+    }
+    await loadAvailableModels();
+    renderPanelMembers(host);
+    renderPanelAdder();
+    renderJudgePicker();
+    renderPanelSuggestion();
+
+    // The composer button only appears once a debate is actually possible.
+    document.getElementById('debate-btn')?.classList.toggle('hidden', !consensusState.ready);
+}
+
+async function loadAvailableModels() {
+    try {
+        const data = await api('/api/models');
+        availableModels = [
+            ...(data.installed || []).map(m => ({
+                model: m.name, provider: 'ollama', group: 'On this machine',
+            })),
+            ...(data.remote || []).flatMap(group => (group.models || []).map(name => ({
+                model: name, provider: group.provider, group: group.label,
+            }))),
+        ];
+    } catch (_) {
+        availableModels = [];
+    }
+}
+
+function memberKey(member) {
+    return `${member.provider || 'ollama'}::${member.model}`;
+}
+
+function renderPanelMembers(host) {
+    host.innerHTML = '';
+    if (!consensusState.panel.length) {
+        host.innerHTML = `<div class="empty">No panel yet — pick at least `
+            + `${consensusState.min_members} models below.</div>`;
+        return;
+    }
+    consensusState.panel.forEach((member, index) => {
+        const row = document.createElement('div');
+        row.className = 'hook-row';
+        row.innerHTML = `<div class="hook-main">
+            <span class="provider-name">${escHtml(member.model)}</span>
+            <span class="tag">${escHtml(member.provider || 'on-device')}</span>
+          </div>`;
+        const remove = document.createElement('button');
+        remove.className = 'btn btn-ghost';
+        remove.textContent = 'Remove';
+        remove.onclick = () => savePanel(consensusState.panel.filter((_, i) => i !== index));
+        row.appendChild(remove);
+        host.appendChild(row);
+    });
+}
+
+function renderPanelAdder() {
+    const select = document.getElementById('consensus-add');
+    if (!select) return;
+    const chosen = new Set(consensusState.panel.map(memberKey));
+    const groups = {};
+    for (const entry of availableModels) {
+        if (chosen.has(memberKey(entry))) continue;   // already on the panel
+        (groups[entry.group] ||= []).push(entry);
+    }
+    const full = consensusState.panel.length >= consensusState.max_members;
+    select.disabled = full;
+    select.innerHTML = `<option value="">${
+        full ? `Panel is full (${consensusState.max_members} models)` : 'Add a model to the panel…'
+    }</option>`;
+    for (const [group, entries] of Object.entries(groups)) {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = group;
+        for (const entry of entries) {
+            const option = document.createElement('option');
+            option.value = memberKey(entry);
+            option.textContent = entry.model;
+            optgroup.appendChild(option);
+        }
+        select.appendChild(optgroup);
+    }
+    if (!availableModels.length) {
+        select.innerHTML = '<option value="">No models found — pull one, or add a provider key</option>';
+        select.disabled = true;
+    }
+}
+
+function renderJudgePicker() {
+    const select = document.getElementById('consensus-judge');
+    if (!select) return;
+    const current = consensusState.synthesiser?.model || '';
+    // Only panel members: a judge that never saw the debate is not a judge.
+    select.innerHTML = '<option value="">The first model on the panel</option>';
+    for (const member of consensusState.panel) {
+        const option = document.createElement('option');
+        option.value = memberKey(member);
+        option.textContent = `${member.model} (${member.provider || 'on-device'})`;
+        option.selected = member.model === current;
+        select.appendChild(option);
+    }
+}
+
+// A panel of two models from the same family agrees for the same reasons, so
+// the suggestion deliberately pairs different ones when it can see them.
+function renderPanelSuggestion() {
+    const host = document.getElementById('consensus-suggest');
+    if (!host) return;
+    host.innerHTML = '';
+    if (consensusState.panel.length >= consensusState.min_members) return;
+    const local = availableModels.filter(m => m.provider === 'ollama');
+    if (local.length < 2) return;
+
+    const family = name => (name || '').split(/[:\-.]/)[0].toLowerCase();
+    let pair = null;
+    for (let i = 0; i < local.length && !pair; i++) {
+        for (let j = i + 1; j < local.length; j++) {
+            if (family(local[i].model) !== family(local[j].model)) {
+                pair = [local[i], local[j]];
+                break;
+            }
+        }
+    }
+    if (!pair) return;
+
+    const button = document.createElement('button');
+    button.className = 'btn btn-ghost';
+    button.textContent = `Use ${pair[0].model} and ${pair[1].model}`;
+    button.onclick = () => savePanel(pair.map(p => ({ model: p.model, provider: p.provider })));
+    const note = document.createElement('div');
+    note.className = 'muted small';
+    note.textContent = 'Suggested because they are different families, so they tend to '
+        + 'be wrong about different things:';
+    host.append(note, button);
+}
+
+async function savePanel(members) {
+    try {
+        await api('/api/consensus/panel',
+            { method: 'PUT', body: JSON.stringify({ members }) });
+        loadConsensusPanel();
+    } catch (e) {
+        alert(e.detail || e.message);
+    }
+}
+
+function addPanelMember(select) {
+    const value = select?.value;
+    if (!value) return;
+    select.value = '';
+    const [provider, model] = value.split('::');
+    savePanel([...(consensusState?.panel || []), { model, provider }]);
+}
+
+async function saveSynthesiser(value) {
+    const [provider, model] = (value || '').split('::');
+    try {
+        await api('/api/consensus/synthesiser',
+            { method: 'PUT', body: JSON.stringify({ model: model || '', provider: provider || '' }) });
+        loadConsensusPanel();
+    } catch (e) {
+        alert(e.detail || e.message);
+    }
+}
+
+// ---------- Running one from the composer ----------
+
+async function debateCurrentQuestion() {
+    const input = document.getElementById('cmd-input') || document.getElementById('chat-input');
+    const question = (input?.value || '').trim();
+    if (!question) return;
+    input.value = '';
+
+    if (typeof appendMessage === 'function') appendMessage('user', question);
+    const el = typeof appendMessage === 'function' ? appendMessage('assistant', '') : null;
+    const content = el?.querySelector('.content');
+    const trace = document.createElement('div');
+    trace.className = 'debate-trace';
+    if (el && content) el.insertBefore(trace, content);
+
+    function step(text) {
+        const line = document.createElement('div');
+        line.className = 'debate-step';
+        line.textContent = text;
+        trace.appendChild(line);
+    }
+    step('asking the panel…');
+
+    try {
+        const response = await fetch('/api/consensus/debate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+            body: JSON.stringify({ question, stream: true }),
+        });
+        if (!response.ok) throw new Error((await response.json()).detail || 'failed');
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const frames = buffer.split('\n\n');
+            buffer = frames.pop();
+            for (const frame of frames) {
+                const line = frame.split('\n').find(l => l.startsWith('data: '));
+                if (!line) continue;
+                let payload;
+                try { payload = JSON.parse(line.slice(6)); } catch (_) { continue; }
+                if (payload.round === 'propose') step(`${payload.members} models answering independently`);
+                if (payload.round === 'critique') step('models critiquing each other, anonymously');
+                if (payload.round === 'synthesis') step('writing the final answer');
+                if (payload.search_mode && payload.search_mode !== 'off') {
+                    step(`each model may search for its own evidence (${payload.search_mode})`);
+                }
+                if (payload.proposals) {
+                    for (const p of payload.proposals) {
+                        const searched = p.tool_calls ? `, ${p.tool_calls} lookup(s)` : '';
+                        step(`  ${p.model}: ${p.ok ? `${p.seconds}s${searched}` : `failed — ${p.error}`}`);
+                    }
+                }
+                if (payload.error) step('error: ' + payload.error);
+                if (payload.done) renderDebate(payload.done, content);
+            }
+        }
+    } catch (e) {
+        if (content) content.textContent = 'Debate failed: ' + e.message;
+    }
+}
+
+function renderDebate(run, content) {
+    if (!content) return;
+    content.innerHTML = '';
+
+    // Disagreement first. A split panel is the finding; the prose is the
+    // summary of it, and showing them the other way round buries the point.
+    if (run.disagreements?.length) {
+        const box = document.createElement('div');
+        box.className = 'debate-split';
+        box.innerHTML = `<div class="split-head">The panel did not agree — worth reading</div>`;
+        for (const item of run.disagreements.slice(0, 6)) {
+            const row = document.createElement('div');
+            row.className = 'split-point';
+            row.textContent = item.point;
+            box.appendChild(row);
+        }
+        content.appendChild(box);
+    }
+    if (run.degraded) {
+        const warn = document.createElement('div');
+        warn.className = 'debate-split';
+        warn.textContent = run.degraded;
+        content.appendChild(warn);
+    }
+
+    const answer = document.createElement('div');
+    answer.innerHTML = typeof mdToHtml === 'function' ? mdToHtml(run.answer) : escHtml(run.answer);
+    content.appendChild(answer);
+
+    const footer = document.createElement('div');
+    footer.className = 'debate-footer';
+    const models = (run.proposals || []).map(p => p.model).join(', ');
+    footer.textContent = `${models} · ${run.seconds}s · `
+        + (run.agreement >= 0.5 ? 'the answers were close' : 'the answers diverged');
+    content.appendChild(footer);
+}

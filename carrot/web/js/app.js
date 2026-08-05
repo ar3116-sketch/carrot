@@ -7,6 +7,10 @@ let currentModel = null;
 // provider and a pulled tag to Ollama, and guessing wrong routed chat to a
 // model that was not there.
 let currentProvider = null;
+// A chat that is answered but not remembered. Per-conversation rather than a
+// global setting, because the reason to want one is usually a single question
+// rather than a change of policy.
+let temporaryChat = false;
 let speakReplies = false;
 let mediaRecorder = null;
 let recordedChunks = [];
@@ -566,6 +570,7 @@ async function sendChat() {
         conversation_id: currentConversationId,
         model: currentModel,
         provider: currentProvider,
+        temporary: temporaryChat,
         skill: activeSkill ? activeSkill.slug : null,
         search_mode: currentSearchMode,
     }, activeSkill);
@@ -2011,3 +2016,41 @@ async function maybeShowOnboarding() {
     document.getElementById('onboard').classList.remove('hidden');
     onboardStep('welcome');
 }
+
+// ===== Temporary chats =====
+//
+// No memory extraction, no rolling summary, no workspace filing, and deleted
+// on the next start. The banner is not decoration: a mode that silently
+// changes whether you are being remembered is a mode people forget they are
+// in, and the whole value here is knowing.
+
+function toggleTemporaryChat() {
+    // Switching mode mid-conversation would be a lie either way — the earlier
+    // turns are already remembered, or already not — so it starts a new one.
+    if (currentConversationId) newChat();
+    temporaryChat = !temporaryChat;
+    renderTemporaryState();
+}
+
+function renderTemporaryState() {
+    document.getElementById('temp-btn')?.classList.toggle('on', temporaryChat);
+    let banner = document.getElementById('temp-banner');
+    if (!temporaryChat) {
+        banner?.remove();
+        return;
+    }
+    if (banner) return;
+    const log = document.getElementById('chat-log') || document.getElementById('messages');
+    if (!log) return;
+    banner = document.createElement('div');
+    banner.id = 'temp-banner';
+    banner.className = 'temp-banner';
+    banner.innerHTML = `
+      <strong>Temporary chat.</strong> Nothing here is saved to memory, summarised,
+      or filed in a workspace, and the whole conversation is deleted when Carrot
+      next starts. Attachments you send are still processed normally.`;
+    log.prepend(banner);
+}
+
+// A new chat inherits the mode you are in, so the banner has to follow it.
+document.addEventListener('DOMContentLoaded', renderTemporaryState);

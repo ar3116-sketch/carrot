@@ -31,6 +31,7 @@
   <symbol id="i-speaker-off" viewBox="0 0 24 24"><path d="M11.4 4.4L6.6 8.6H3.2v6.8h3.4l4.8 4.2z"/><path d="M16.2 9.8l5 4.4M21.2 9.8l-5 4.4"/></symbol>
   <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19.5V5.2"/><path d="M5.6 11.6L12 5.2l6.4 6.4"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6.4 9.4l5.6 5.4 5.6-5.4"/></symbol>
+  <symbol id="i-ghost" viewBox="0 0 24 24"><path d="M4.2 11.4a7.8 7.8 0 0 1 15.6 0v8.4l-2.6-1.8-2.6 1.8-2.6-1.8-2.6 1.8-2.6-1.8z" stroke-dasharray="3 2.6"/><circle cx="9.4" cy="10.6" r="1.05" fill="currentColor" stroke="none"/><circle cx="14.6" cy="10.6" r="1.05" fill="currentColor" stroke="none"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-chip" viewBox="0 0 24 24"><rect x="6.4" y="6.4" width="11.2" height="11.2" rx="3"/><rect x="10" y="10" width="4" height="4" rx="1.2"/><path d="M9.6 3.2v3.2M14.4 3.2v3.2M9.6 17.6v3.2M14.4 17.6v3.2M3.2 9.6h3.2M3.2 14.4h3.2M17.6 9.6h3.2M17.6 14.4h3.2"/></symbol>
   <symbol id="i-terminal" viewBox="0 0 24 24"><path d="M8.6 7.6L3.6 12l5 4.4M15.4 7.6l5 4.4-5 4.4M13.6 4.4l-3.2 15.2"/></symbol>
@@ -1357,6 +1358,37 @@
 
       <div class="settings-card">
         <div class="settings-head">
+          <svg class="ico"><use href="#i-chip"/></svg>
+          <h3>Consensus &amp; debate</h3>
+        </div>
+        <p class="muted small">
+          For questions where one confident paragraph is not enough. Two or more models
+          answer independently, then critique each other's answers anonymously, then one
+          writes the final answer — stating where the panel disagreed rather than
+          averaging it away. Each model searches for its own evidence, so two of them
+          finding different sources is a real disagreement rather than a difference in
+          what they happened to memorise. Pick models that fail <em>differently</em>: a coding model
+          and a reasoning model beat two of the same family. It costs roughly as many
+          tokens and as much time as models on the panel, so it is per-question rather
+          than a mode you leave on.
+        </p>
+        <div id="consensus-panel"></div>
+        <div id="consensus-suggest"></div>
+        <div class="settings-row">
+          <!-- The same list the composer's model picker uses: everything you
+               have pulled, plus every model from a provider you configured. -->
+          <select id="consensus-add" onchange="addPanelMember(this)">
+            <option value="">Add a model to the panel…</option>
+          </select>
+        </div>
+        <div class="settings-row">
+          <label class="muted small" for="consensus-judge">Which model writes the final answer</label>
+          <select id="consensus-judge" onchange="saveSynthesiser(this.value)"></select>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <div class="settings-head">
           <svg class="ico"><use href="#i-pulse"/></svg>
           <h3>Local webhooks</h3>
         </div>
@@ -1535,6 +1567,18 @@
       </div>
     </div>
   </div>
+  <button id="temp-btn" class="composer-chip"
+          onclick="toggleTemporaryChat()"
+          title="Answered but not remembered, and deleted afterwards">
+    <svg class="ico"><use href="#i-ghost"/></svg>
+    <span>Temporary</span>
+  </button>
+  <button id="debate-btn" class="composer-chip hidden"
+          onclick="debateCurrentQuestion()"
+          title="Ask your panel of models and make them argue before answering">
+    <svg class="ico"><use href="#i-chip"/></svg>
+    <span>Debate</span>
+  </button>
   <div id="search-picker">
     <button id="search-btn" onclick="toggleSearchPop()" title="How much Carrot may search the web">
       <svg class="ico"><use href="#i-search"/></svg>

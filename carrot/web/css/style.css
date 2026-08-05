@@ -4483,3 +4483,80 @@ td, th, .si-sub, .small, .editor-status {
   margin-bottom: 8px;
   line-height: 1.5;
 }
+
+/* ===== Consensus & debate =====
+   The disagreement is the finding; the prose is the summary of it. So the
+   split box sits above the answer and is the only part with the accent. */
+.composer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.composer-chip:hover { color: var(--text); border-color: var(--accent-line); }
+.composer-chip.hidden { display: none; }
+
+.debate-trace {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--faint);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+.debate-step { white-space: pre-wrap; }
+.debate-split {
+  padding: 11px 13px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.split-head {
+  font-family: var(--sans);
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.split-point { margin-bottom: 5px; }
+.split-point:last-child { margin-bottom: 0; }
+.debate-footer {
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--faint);
+}
+
+/* ===== Temporary chats =====
+   The banner is not decoration. A mode that silently changes whether you are
+   being remembered is a mode people forget they are in. */
+.composer-chip.on {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.temp-banner {
+  padding: 11px 14px;
+  margin-bottom: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-hi);
+  background: var(--card);
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.temp-banner strong { color: var(--text); }

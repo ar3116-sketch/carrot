@@ -66,6 +66,8 @@ from carrot import (
     planner_api,
     webhooks as webhooks_mod,
     webhooks_api,
+    consensus as consensus_mod,
+    consensus_api,
     dualauth,
     gitops as gitops_mod,
     help as help_mod,
@@ -112,6 +114,7 @@ app.include_router(media_api.auth_router)
 app.include_router(planner_api.router)
 app.include_router(webhooks_api.router)
 app.include_router(webhooks_api.public_router)
+app.include_router(consensus_api.router)
 
 
 # ===== Pydantic request models =====
@@ -159,6 +162,8 @@ class ChatRequest(BaseModel):
     # File a newly created conversation into this workspace. The quick-ask
     # panel uses it to ask a question "in" a project without opening the app.
     workspace_id: Optional[str] = None
+    # A chat that is answered but not remembered, and deleted afterwards.
+    temporary: Optional[bool] = False
 
 
 class AddMessageRequest(BaseModel):
@@ -424,6 +429,12 @@ class McpEnableRequest(BaseModel):
 def startup():
     init_db()
     os.makedirs(DB_DIR, exist_ok=True)
+    # "Temporary" that survives a crash is not temporary, it is
+    # usually-temporary. Sweeping at startup makes the promise unconditional.
+    try:
+        conv_mod.purge_temporary()
+    except Exception:
+        pass
     vectors_mod.migrate_legacy_embeddings()
     dr_mod.start_scheduler()
     proactive_mod.start_watcher()
@@ -1489,6 +1500,13 @@ def _post_turn(conversation_id, user_message, assistant_text, message_id):
     answer without waiting for Carrot's bookkeeping.
     """
     def work():
+        # A temporary chat is exempt from all of it. This is the only place
+        # that decides, so there is one thing to get right rather than three.
+        try:
+            if conv_mod.is_temporary(conversation_id):
+                return
+        except Exception:
+            pass
         settings = config.get_config()
         if settings.get("memory_enabled", True):
             try:
@@ -1513,11 +1531,16 @@ def _post_turn(conversation_id, user_message, assistant_text, message_id):
 def _open_conversation(req):
     """Resolve (or create) the conversation a chat request targets."""
     if req.conversation_id is None:
-        created = conv_mod.create_conversation(title=req.message[:80])
+        temporary = bool(getattr(req, "temporary", False))
+        created = conv_mod.create_conversation(
+            title=req.message[:80],
+            metadata={conv_mod.TEMPORARY_KEY: True} if temporary else None,
+        )
         req.conversation_id = created["id"]
         # Only on creation: filing an existing conversation elsewhere because
-        # of one message would move it out from under the user.
-        workspace_id = getattr(req, "workspace_id", None)
+        # of one message would move it out from under the user. A temporary
+        # chat is filed nowhere at all.
+        workspace_id = None if temporary else getattr(req, "workspace_id", None)
         if workspace_id:
             try:
                 workspaces_mod.file_item(
@@ -1730,6 +1753,12 @@ async def update_conversation(conv_id: str, req: ConversationUpdateRequest):
     if result is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return result
+
+
+@app.post("/api/conversations/temporary/purge")
+async def purge_temporary_conversations():
+    """Delete every temporary chat now, without waiting for a restart."""
+    return {"deleted": conv_mod.purge_temporary()}
 
 
 @app.delete("/api/conversations/{conv_id}")
